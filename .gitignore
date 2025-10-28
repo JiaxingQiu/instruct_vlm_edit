@@ -1,0 +1,25 @@
+aokvqa/
+fvqa/
+coco/
+
+data/
+hf_models/
+Llama-2-13b-chat-hf/
+llama-13b/
+vicuna-13b-delta-v0/
+tokens.py
+ssh_rivanna
+results/
+log/
+
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+.ipynb_checkpoints
+.ipynb_checkpoints/
+.DS_Store
+
+# any file start with test end with .ipynb
+test*
+finetune_*.pth
+ft_*.pth
