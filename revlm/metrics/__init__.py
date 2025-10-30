@@ -2,6 +2,24 @@ import torch
 import numpy as np
 
 
+def MCQ_metrics(model, vlmdataset):
+    loader = vlmdataset.loader # loader is init with task before this
+    y_true = []
+    y_pred = []
+    for batch in loader:
+        y_true += batch["label"]
+        y_pred += model.generate(batch["image"], batch["prompt"], max_new_tokens=100)
+    
+    # extract A/B/C/D from y_pred
+    
+
+    # extract word options from y_true
+
+
+
+
+
+
 
 def Accuracy(model, tokens):
     """Accuracy metric for classification tasks"""

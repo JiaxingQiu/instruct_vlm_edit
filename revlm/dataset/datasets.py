@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset, DataLoader
 import logging
 import random
+from PIL import Image
 
 from .utils import *
 
@@ -30,8 +31,7 @@ class VLMDataset(Dataset):
                         batch_size=32,
                         shuffle=True,
                         num_workers=0,
-                        pin_memory=True,
-                        collate_fn=None):
+                        pin_memory=True):
         if task == "MCQ" and shuffle_choices:
             self.shuffle_choices(seed=333)
         
@@ -44,10 +44,7 @@ class VLMDataset(Dataset):
                 base = f"{sys_prompt} {ex['question']}".strip()
             ex["prompt"] = f"{base} {ex.get('rationale','')}".strip() if with_rationale else base
 
-        if collate_fn is None:
-            collate_fn = lambda batch: batch  # pass list[dict] through
-
-        self.loader = DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory, collate_fn=collate_fn)
+        self.loader = DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory, collate_fn=self.image_collate)
         self.loader.task = task
         self.loader.with_rationale = with_rationale
         self.loader.shuffle_choices = shuffle_choices
@@ -79,6 +76,16 @@ class VLMDataset(Dataset):
                     letter = ltr
                     break
             ex["letter_label"] = letter
+
+
+    def image_collate(self, batch):
+        """Collate function that loads images and returns a batch dict.
+        Expects items with keys: 'image' (path), 'prompt' (string), optional 'label'.
+        """
+        images = [Image.open(ex["image"]).convert("RGB") for ex in batch]
+        prompts = [ex.get("prompt", ex.get("question", "")) for ex in batch]
+        labels = [ex.get("label") for ex in batch]
+        return {"images": images, "prompts": prompts, "labels": labels}
 
 
 class AOKVQADataset(VLMDataset):

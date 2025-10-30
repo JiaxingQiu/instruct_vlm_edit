@@ -9,6 +9,19 @@ from huggingface_hub import snapshot_download
 LOG = logging.getLogger(__name__)
 
 
+def extract_choice_pairs(s: str):
+    """Order-agnostic parse of lines like '(A) foo', '(B) bar', ...
+    Returns list of (letter, text) in the order they appear.
+    """
+    pairs = re.findall(r"\(([A-D])\)\s*(.+)", s)
+    return [(ltr, txt.strip()) for (ltr, txt) in pairs]
+
+
+def extract_choices(question: str):
+    """Order-agnostic: return only the option texts in the order they appear."""
+    return [txt for (_ltr, txt) in extract_choice_pairs(question)]
+
+
 def data_download_parquet_splits(repo_id: str, path_in_repo: str, cache_dir: Optional[str] = None) -> Dict[str, Optional[str]]:
     """Download train/val/test parquet files from a HF dataset directory."""
     local_root = snapshot_download(
@@ -93,19 +106,4 @@ def tokenize_vlm(batch, tokenizer, device, test=False):
 def get_tokenize_fn(task):
     """Get tokenization function for given task"""
     return tokenize_vlm
-
-
-
-def extract_choice_pairs(s: str):
-    """Order-agnostic parse of lines like '(A) foo', '(B) bar', ...
-    Returns list of (letter, text) in the order they appear.
-    """
-    pairs = re.findall(r"\(([A-D])\)\s*(.+)", s)
-    return [(ltr, txt.strip()) for (ltr, txt) in pairs]
-
-
-def extract_choices(question: str):
-    """Order-agnostic: return only the option texts in the order they appear."""
-    return [txt for (_ltr, txt) in extract_choice_pairs(question)]
-
 
