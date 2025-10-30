@@ -1,7 +1,7 @@
 import torch
 import logging
 from PIL import Image
-from .utils import get_hf_model, get_processor, get_tokenizer
+from .utils import build_vlm
 
 LOG = logging.getLogger(__name__)
 
@@ -11,15 +11,13 @@ class VQAModel(torch.nn.Module):
     def __init__(self, config):
         super(VQAModel, self).__init__()
         self.config = config
-        self.model = get_hf_model(config)
-        self.processor = get_processor(config)
-        self.tokenizer = get_tokenizer(config)
+        self.model, self.processor, self.tokenizer, self.inner = build_vlm(config)
         
         # Device handling
         device_str = getattr(config, "device", None) or ("cuda" if torch.cuda.is_available() else "cpu")
         self.device = torch.device(device_str) if isinstance(device_str, str) else device_str
         
-        self.model = self.model.to(self.device)
+        # Model is already placed via device_map in from_pretrained; just eval
         self.model.eval()
 
     def forward(self, **inputs):
@@ -33,13 +31,14 @@ class VQAModel(torch.nn.Module):
         images = [images] if isinstance(images, Image.Image) else images
         prompts = [prompts] if isinstance(prompts, str) else prompts
         
-        # Process
+        # Delegate to inner wrapper if present
+        if self.inner is not None:
+            return self.inner.generate(images, prompts, max_new_tokens=max_new_tokens, **kwargs)
+
+        # Generic processing path
         inputs = self.processor(images=images, text=prompts, return_tensors="pt", padding=True)
         inputs = {k: v.to(self.device) for k, v in inputs.items()}
-        
-        # Generate
         with torch.no_grad():
-            generated_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens, **kwargs)
-            generated_text = self.processor.batch_decode(generated_ids, skip_special_tokens=True)
-        
+            gen_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens, **kwargs)
+            generated_text = self.processor.batch_decode(gen_ids, skip_special_tokens=True)
         return generated_text
