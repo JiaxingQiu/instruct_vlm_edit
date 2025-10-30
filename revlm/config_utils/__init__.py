@@ -53,14 +53,13 @@ def configure_args(args, config_path=None):
     if config_path is None:
         config_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "config.yaml")
 
-    # Base config
+    # ---- Base config ----
     cfg = _load_yaml(config_path)
-
     # Ensure expected top-level keys exist
     cfg.setdefault("model", {})
     cfg.setdefault("experiment", {})
 
-    # Merge editor preset into nested editor block
+    # ---- Merge editor preset into nested editor block ----
     cli_editor = getattr(args, "editor", None)
     editor_cfg = {}
     if cli_editor:
@@ -83,14 +82,23 @@ def configure_args(args, config_path=None):
         if cli_editor:
             cfg["editor"] = {"_name": cli_editor}
 
-    # CLI overrides for nested fields
+    # ---- CLI overrides for nested fields ----
     if getattr(args, "inner_params", None):
         cfg.setdefault("model", {})["inner_params"] = args.inner_params
     if getattr(args, "dataset_name", None):
         cfg.setdefault("experiment", {})["dataset_name"] = args.dataset_name
+    # Map short model name to full HF model id if provided
+    if getattr(args, "model_name", None):
+        short_to_full = {
+            "qwen3": "Qwen/Qwen3-VL-8B-Instruct",
+            "llava": "llava-hf/llava-1.5-7b-hf",
+            "instructblip": "Salesforce/instructblip-vicuna-7b",
+        }
+        key = str(args.model_name).lower()
+        mapped = short_to_full.get(key, args.model_name)
+        cfg.setdefault("model", {})["name"] = mapped
     if cli_editor and cfg.get("editor"):
         cfg["editor"]["_name"] = cli_editor
-
     # Move inner_params from top-level to model if present
     if "inner_params" in cfg and cfg["inner_params"]:
         cfg.setdefault("model", {})
@@ -99,7 +107,8 @@ def configure_args(args, config_path=None):
         # Remove from top-level to avoid confusion
         del cfg["inner_params"]
     
-    # Build nested namespace
+
+    # ---- Build nested namespace ----
     nested = {
         # pass through scalar top-levels
         "batch_size": cfg.get("batch_size", 1),

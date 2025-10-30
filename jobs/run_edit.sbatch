@@ -21,6 +21,7 @@ mkdir -p logs
 # Example command - adjust parameters based on your needs
 python revlm/main.py \
     --editor ft \
+    --model_name llava \
     --inner_params "layer_name.weight" \
     --dataset_name fvqa \
     --config config/config.yaml
