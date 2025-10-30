@@ -2,6 +2,7 @@ import os
 from torch.utils.data import Dataset
 import logging
 import re
+import random
 
 from .utils import data_download_parquet_splits, data_load_split_df, data_rows_to_examples
 
@@ -25,17 +26,45 @@ class VLMDataset(Dataset):
         return self.data[idx]
 
     
+    def shuffle_choices(self, seed=None):
+        """Shuffle (letter, option) pairs together, preserving their association.
+        The rendered lines may start with any of (A|B|C|D) after shuffling.
+        """
+        rng = random.Random(seed) if seed is not None else random
+        for ex in self.data:
+            chs = ex.get("choices", "")
+            pairs = extract_choice_pairs(chs)
+            if len(pairs) != 4:
+                continue
+            rng.shuffle(pairs)
+            ex["choices"] = "\n".join([f"({ltr}) {txt}" for (ltr, txt) in pairs])
+
+    def add_letter_labels(self):
+        """Add 'letter_label' field per example by matching text in 'labels' to current choices.
+        Expects 'labels' to contain the answer text (e.g., 'cab').
+        """
+        for ex in self.data:
+            ans_text = str(ex.get("labels", "")).strip()
+            pairs = extract_choice_pairs(ex.get("choices", ""))
+            letter = None
+            for ltr, opt in pairs:
+                if opt.strip().lower() == ans_text.lower():
+                    letter = ltr
+                    break
+            ex["letter_label"] = letter
+
+
+def extract_choice_pairs(s: str):
+    """Order-agnostic parse of lines like '(A) foo', '(B) bar', ...
+    Returns list of (letter, text) in the order they appear.
+    """
+    pairs = re.findall(r"\(([A-D])\)\s*(.+)", s)
+    return [(ltr, txt.strip()) for (ltr, txt) in pairs]
+
 
 def extract_choices(question: str):
-    """Extract (A)-(D) choice texts from a question string.
-    Returns a list of four strings or an empty list if not found.
-    """
-    m = re.search(
-        r"\(A\)\s*(.*?)\s*\n\s*\(B\)\s*(.*?)\s*\n\s*\(C\)\s*(.*?)\s*\n\s*\(D\)\s*(.*?)\s*\n",
-        question,
-        flags=re.DOTALL,
-    )
-    return [m.group(i).strip() for i in range(1, 5)] if m else []
+    """Order-agnostic: return only the option texts in the order they appear."""
+    return [txt for (_ltr, txt) in extract_choice_pairs(question)]
 
 
 class AOKVQADataset(VLMDataset):

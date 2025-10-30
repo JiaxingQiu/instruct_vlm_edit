@@ -46,6 +46,7 @@ class VQAModel(torch.nn.Module):
             answers = [clean_answer(o, i) for (o, i) in zip(outputs_text, prompts)]
         return answers
 
+    
     def _nll_to_probs(self, label_losses: Dict[str, Dict[str, float]], use_avg: bool = False, temperature: float = 1.0) -> Dict[str, float]:
         scores = {}
         temp = max(1e-8, float(temperature))
@@ -57,6 +58,7 @@ class VQAModel(torch.nn.Module):
         Z = sum(exps.values()) or 1.0
         return {lbl: v / Z for lbl, v in exps.items()}
 
+    
     @torch.no_grad()
     def _score_label_words(
         self,
@@ -138,6 +140,7 @@ class VQAModel(torch.nn.Module):
 
         return results
 
+    
     @torch.no_grad()
     def score_labels(
         self,
