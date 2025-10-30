@@ -2,7 +2,7 @@ under project directory
 
 ## Download raw datasets 
 
-### FVQA 
+### A-OKVQA
 - [Question+Answer+Rational](https://github.com/wangpengnorman/FVQA?tab=readme-ov-file): download to ./data_raw
 
 - COCO 2017 images
@@ -19,8 +19,7 @@ wget http://images.cocodataset.org/annotations/annotations_trainval2017.zip
 unzip annotations_trainval2017.zip -d ${COCO_DIR}; rm annotations_trainval2017.zip
 ```
 
-
-### A-OKVQA
+### FVQA 
 - [QuestionAnswerRational](https://github.com/allenai/aokvqa): download to ./data_raw
 - COCO 2014 & IMAGENET images: 
 copy new_dataset_release/images to data/images/fvqa
