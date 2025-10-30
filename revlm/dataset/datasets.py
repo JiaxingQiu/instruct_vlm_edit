@@ -1,6 +1,7 @@
 import os
 from torch.utils.data import Dataset
 import logging
+import re
 
 from .utils import data_download_parquet_splits, data_load_split_df, data_rows_to_examples
 
@@ -22,6 +23,19 @@ class VLMDataset(Dataset):
     
     def __getitem__(self, idx):
         return self.data[idx]
+
+    
+
+def extract_choices(question: str):
+    """Extract (A)-(D) choice texts from a question string.
+    Returns a list of four strings or an empty list if not found.
+    """
+    m = re.search(
+        r"\(A\)\s*(.*?)\s*\n\s*\(B\)\s*(.*?)\s*\n\s*\(C\)\s*(.*?)\s*\n\s*\(D\)\s*(.*?)\s*\n",
+        question,
+        flags=re.DOTALL,
+    )
+    return [m.group(i).strip() for i in range(1, 5)] if m else []
 
 
 class AOKVQADataset(VLMDataset):
