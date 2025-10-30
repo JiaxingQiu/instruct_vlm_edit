@@ -18,9 +18,7 @@ python -m ipykernel install --user --name revlm --display-name "revlm"
 
 # Datasets
 
-Download the images from [here](somegoogledrive).
-
-To reproduce the preprocessing of raw aokvqa and fvqa datasets, follow the steps [here](data_raw/README.md). 
+To download images and reproduce the preprocessing of raw aokvqa and fvqa datasets, follow the steps [here](data_raw/README.md). 
 
 Benchmark dataset RationaleVQA (based on AOKVQA, FVQA datasets) can be downloaded from [HuggingFace](https://huggingface.co/datasets/JJoy333/RationaleVQA) 
 
