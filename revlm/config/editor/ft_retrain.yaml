@@ -1,0 +1,4 @@
+_name: ft_retrain
+edit_lr: 1e-4
+retrain_memory: 100
+

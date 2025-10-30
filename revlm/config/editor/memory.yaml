@@ -1,0 +1,4 @@
+_name: memory
+edit_lr: 1e-4
+nkeys: 10
+

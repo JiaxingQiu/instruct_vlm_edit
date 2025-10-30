@@ -1,0 +1,5 @@
+_name: ft_ewc
+edit_lr: 1e-4
+ewc_lambda: 1.0
+fisher_mem: 10
+
