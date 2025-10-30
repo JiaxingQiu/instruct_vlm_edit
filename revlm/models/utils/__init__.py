@@ -6,6 +6,7 @@ import torch
 
 from .qwen3 import *
 from .llava import *
+from .instructblip import *
 
 LOG = logging.getLogger(__name__)
 
@@ -19,6 +20,10 @@ def ckpt_dir():
 
 def get_processor(config):
     """Load vision-language processor"""
+    name_lower = getattr(getattr(config, "model", {}), "name", "").lower()
+    if "instructblip" in name_lower:
+        return get_processor_instructblip(config, cache_dir=ckpt_dir())
+    
     return transformers.AutoProcessor.from_pretrained(
         config.model.name,
         cache_dir=ckpt_dir(),
@@ -26,10 +31,12 @@ def get_processor(config):
     )
 
 
+
 def get_tokenizer(config):
     """Get text tokenizer from processor"""
     processor = get_processor(config)
-    return processor.tokenizer
+    tok = processor.tokenizer
+    return tok
 
 
 def get_model_class_for_name(model_name):
@@ -41,13 +48,15 @@ def get_model_class_for_name(model_name):
         return getattr(transformers, "InstructBlipForConditionalGeneration", None)
     elif "llava" in model_name_lower:
         return getattr(transformers, "AutoModelForVision2Seq", transformers.AutoModel)
-    elif "blip2" in model_name_lower or "minigpt" in model_name_lower:
-        return getattr(transformers, "Blip2ForConditionalGeneration", None)
     return None  # Use auto mode
 
 
 def get_hf_model(config):
     name_lower = getattr(getattr(config, "model", {}), "name", "").lower()
+    if "instructblip" in name_lower:
+        torch_dtype = torch.bfloat16 if torch.cuda.is_available() else None
+        cache = None if getattr(config.model, "pt", None) else ckpt_dir()
+        return get_hf_model_instructblip(config, cache_dir=cache, torch_dtype=torch_dtype)
     ModelClass = get_model_class_for_name(name_lower)
     model_path = getattr(config.model, "pt", None) or config.model.name
     load_kwargs = {
@@ -80,12 +89,29 @@ def get_preprocess(config):
     """
     name_lower = getattr(getattr(config, "model", {}), "name", "").lower()
 
-    def _generic(images, prompts, processor):
-        return processor(images=images, text=prompts, return_tensors="pt", padding=True)
+    def _generic(images, prompts, processor, tokenize=False):
+        return processor(images=images, text=prompts, return_tensors="pt", padding=True, tokenize=tokenize)
 
     if "qwen3" in name_lower:
         return preprocess_qwen3
-    if "llava" in name_lower or "onevision" in name_lower:
+    if "llava" in name_lower:
         return preprocess_llava
     return _generic
 
+
+def clean_answer(o, i):
+    s = o or ""
+    if "ASSISTANT:" in s:
+        s = s.split("ASSISTANT:")[-1].strip()
+    elif "assistant" in s:
+        s = s.split("assistant")[-1].replace("\n", "").replace(":", "").strip()
+    elif "Answer:" in s:
+        s = s.split("Answer:")[-1].strip()
+    elif "ANSWER:" in s:
+        s = s.split("ANSWER:")[-1].strip()
+    elif "answer:" in s:
+        s = s.split("answer:")[-1].strip()
+    else:
+        # remove i from s
+        s = s.replace(i, "").strip()
+    return s
