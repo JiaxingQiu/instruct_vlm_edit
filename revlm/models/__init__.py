@@ -1,6 +1,6 @@
 import torch
 import logging
-from .wrapper import VQAModel
+from .VQAModel import VQAModel
 
 LOG = logging.getLogger(__name__)
 

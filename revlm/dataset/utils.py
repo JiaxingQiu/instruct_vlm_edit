@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import List, Dict, Optional, Tuple
+import re
 
 import pandas as pd
 from huggingface_hub import snapshot_download
@@ -43,8 +44,8 @@ def data_rows_to_examples(df: pd.DataFrame) -> List[Dict]:
     return [
         {
             "image": r["image_path"],
-            "text": r["question"],
-            "labels": r["answer"],
+            "question": r["question"],
+            "label": r["answer"],
             "rationale": r["rationale"],
             "choices": r["choices"],
         }
@@ -58,32 +59,32 @@ def tokenize_vlm(batch, tokenizer, device, test=False):
     Tokenize VLM input batch.
     Assumes batch contains:
     - image: image path or tensor
-    - text: text prompt/question
-    - labels: target answer (optional)
+    - question: question prompt/question
+    - label: target answer (optional)
     """
-    text = batch.get("text", batch["text"]) if isinstance(batch, dict) else ""
-    labels = batch.get("labels", None) if isinstance(batch, dict) else None
+    question = batch.get("question", batch["question"]) if isinstance(batch, dict) else ""
+    label = batch.get("label", None) if isinstance(batch, dict) else None
 
     tokens = tokenizer(
-        text if isinstance(text, list) else [text],
+        question if isinstance(question, list) else [question],
         return_tensors="pt",
         padding=True,
         truncation=True
     )
 
-    if labels is not None and not test:
+    if label is not None and not test:
         label_tokens = tokenizer(
-            labels if isinstance(labels, list) else [labels],
+            label if isinstance(label, list) else [label],
             return_tensors="pt",
             padding=True,
             truncation=True
         )
-        tokens["labels"] = label_tokens["input_ids"]
-        tokens["labels"][tokens["labels"] == tokenizer.pad_token_id] = -100
+        tokens["label"] = label_tokens["input_ids"]
+        tokens["label"][tokens["label"] == tokenizer.pad_token_id] = -100
     elif not test:
-        tokens["labels"] = tokens["input_ids"].clone()
+        tokens["label"] = tokens["input_ids"].clone()
         if tokenizer.pad_token_id is not None:
-            tokens["labels"][tokens["input_ids"] == tokenizer.pad_token_id] = -100
+            tokens["label"][tokens["input_ids"] == tokenizer.pad_token_id] = -100
 
     tokens = {k: v.to(device) for k, v in tokens.items()}
     return tokens
@@ -92,4 +93,19 @@ def tokenize_vlm(batch, tokenizer, device, test=False):
 def get_tokenize_fn(task):
     """Get tokenization function for given task"""
     return tokenize_vlm
+
+
+
+def extract_choice_pairs(s: str):
+    """Order-agnostic parse of lines like '(A) foo', '(B) bar', ...
+    Returns list of (letter, text) in the order they appear.
+    """
+    pairs = re.findall(r"\(([A-D])\)\s*(.+)", s)
+    return [(ltr, txt.strip()) for (ltr, txt) in pairs]
+
+
+def extract_choices(question: str):
+    """Order-agnostic: return only the option texts in the order they appear."""
+    return [txt for (_ltr, txt) in extract_choice_pairs(question)]
+
 

@@ -1,10 +1,8 @@
-import os
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import logging
-import re
 import random
 
-from .utils import data_download_parquet_splits, data_load_split_df, data_rows_to_examples
+from .utils import *
 
 LOG = logging.getLogger(__name__)
 
@@ -25,7 +23,36 @@ class VLMDataset(Dataset):
     def __getitem__(self, idx):
         return self.data[idx]
 
-    
+    def set_dataloader(self,
+                        task="QA",  # "QA" or "MCQ"
+                        with_rationale=False,
+                        shuffle_choices=False,
+                        batch_size=32,
+                        shuffle=True,
+                        num_workers=0,
+                        pin_memory=True,
+                        collate_fn=None):
+        if task == "MCQ" and shuffle_choices:
+            self.shuffle_choices(seed=333)
+        
+        for ex in self.data:
+            if task == "MCQ":
+                sys_prompt = "Choose A/B/C/D based on the image."
+                base = f"{sys_prompt} {ex['question']} {ex.get('choices','')}".strip()
+            else:
+                sys_prompt = "Answer the question based on the image."
+                base = f"{sys_prompt} {ex['question']}".strip()
+            ex["prompt"] = f"{base} {ex.get('rationale','')}".strip() if with_rationale else base
+
+        if collate_fn is None:
+            collate_fn = lambda batch: batch  # pass list[dict] through
+
+        self.loader = DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory, collate_fn=collate_fn)
+        self.loader.task = task
+        self.loader.with_rationale = with_rationale
+        self.loader.shuffle_choices = shuffle_choices
+
+
     def shuffle_choices(self, seed=None):
         """Shuffle (letter, option) pairs together, preserving their association.
         The rendered lines may start with any of (A|B|C|D) after shuffling.
@@ -40,11 +67,11 @@ class VLMDataset(Dataset):
             ex["choices"] = "\n".join([f"({ltr}) {txt}" for (ltr, txt) in pairs])
 
     def add_letter_labels(self):
-        """Add 'letter_label' field per example by matching text in 'labels' to current choices.
-        Expects 'labels' to contain the answer text (e.g., 'cab').
+        """Add 'letter_label' field per example by matching text in 'label' to current choices.
+        Expects 'label' to contain the answer text (e.g., 'cab').
         """
         for ex in self.data:
-            ans_text = str(ex.get("labels", "")).strip()
+            ans_text = str(ex.get("label", "")).strip()
             pairs = extract_choice_pairs(ex.get("choices", ""))
             letter = None
             for ltr, opt in pairs:
@@ -52,19 +79,6 @@ class VLMDataset(Dataset):
                     letter = ltr
                     break
             ex["letter_label"] = letter
-
-
-def extract_choice_pairs(s: str):
-    """Order-agnostic parse of lines like '(A) foo', '(B) bar', ...
-    Returns list of (letter, text) in the order they appear.
-    """
-    pairs = re.findall(r"\(([A-D])\)\s*(.+)", s)
-    return [(ltr, txt.strip()) for (ltr, txt) in pairs]
-
-
-def extract_choices(question: str):
-    """Order-agnostic: return only the option texts in the order they appear."""
-    return [txt for (_ltr, txt) in extract_choice_pairs(question)]
 
 
 class AOKVQADataset(VLMDataset):

@@ -38,8 +38,8 @@ class VQAModel(torch.nn.Module):
         return inputs
         
 
-    def generate(self, images, prompts, tokenize=False, **kwargs):
-        inputs = self.encode(images, prompts, tokenize=tokenize)
+    def generate(self, images, prompts, **kwargs):
+        inputs = self.encode(images, prompts, tokenize=False)
         with torch.no_grad():
             outputs = self.model.generate(**inputs, **kwargs)
             outputs_text = self.processor.batch_decode(outputs, skip_special_tokens=True)
