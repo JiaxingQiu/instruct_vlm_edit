@@ -21,7 +21,7 @@ def ckpt_dir():
 def get_processor(config):
     """Load vision-language processor"""
     name_lower = getattr(getattr(config, "model", {}), "name", "").lower()
-    if "instructblip" in name_lower:
+    if "blip" in name_lower:
         return get_processor_instructblip(config, cache_dir=ckpt_dir())
     
     return transformers.AutoProcessor.from_pretrained(
@@ -44,7 +44,7 @@ def get_model_class_for_name(model_name):
     model_name_lower = model_name.lower()
     if "qwen3" in model_name_lower:
         return getattr(transformers, "AutoModelForVision2Seq", transformers.AutoModel)
-    elif "instructblip" in model_name_lower:
+    elif "blip" in model_name_lower:
         return getattr(transformers, "InstructBlipForConditionalGeneration", None)
     elif "llava" in model_name_lower:
         return getattr(transformers, "AutoModelForVision2Seq", transformers.AutoModel)
@@ -53,7 +53,7 @@ def get_model_class_for_name(model_name):
 
 def get_hf_model(config):
     name_lower = getattr(getattr(config, "model", {}), "name", "").lower()
-    if "instructblip" in name_lower:
+    if "blip" in name_lower:
         torch_dtype = torch.bfloat16 if torch.cuda.is_available() else None
         cache = None if getattr(config.model, "pt", None) else ckpt_dir()
         return get_hf_model_instructblip(config, cache_dir=cache, torch_dtype=torch_dtype)

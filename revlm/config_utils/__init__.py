@@ -41,7 +41,7 @@ def configure_args(args, config_path=None):
         short_to_full = {
             "qwen3": "Qwen/Qwen3-VL-8B-Instruct",
             "llava": "llava-hf/llava-1.5-7b-hf",
-            "instructblip": "Salesforce/instructblip-vicuna-7b",
+            "blip": "Salesforce/instructblip-vicuna-7b",
         }
         key = str(args.model_name).lower()
         model["name"] = short_to_full.get(key, args.model_name)
