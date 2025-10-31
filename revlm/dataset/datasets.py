@@ -13,7 +13,6 @@ class VLMDataset(Dataset):
         self.split = split
         self.data = []
         self._load_data()
-        # self.add_label_letter()
         
 
     def _load_data(self):
@@ -49,6 +48,7 @@ class VLMDataset(Dataset):
             ex["prompt"] = f"{base} {ex.get('rationale','')}".strip() if with_rationale else base
 
         # add label_letter: letter that matches the label in the choices column.  example: label = "car", choices = "(A) car\n(B) bike\n(C) train\n(D) bus" -> label_letter = "A"
+        self.add_label_letter()
         self.loader = DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory, collate_fn=self.image_collate)
         self.loader.task = task
         self.loader.with_rationale = with_rationale
