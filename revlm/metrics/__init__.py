@@ -6,16 +6,20 @@ def MCQ_metrics(model, vlmdataset):
     loader = vlmdataset.loader # loader is init with task before this
     y_true = []
     y_pred = []
+    choices = []
     for batch in loader:
         y_true += batch["label"]
+        choices += batch["choices"]
         y_pred += model.generate(batch["image"], batch["prompt"], max_new_tokens=100)
     
-    # extract A/B/C/D from y_pred
-    
+    # engineer y_pred to get the presence of any (A/B/C/D or the option text) in the 'choices' column, make eahc y = (A/B/C/D if returned, option in the choices taht present in y_pred if returned)
+    for y in y_pred:
+        ...
+    # engineer y_true to be a list of y = (letter, option) pairs, where option is the 'label' i.e. ("A", "car"), in other words, find the letter in 'choices' that matches the 'label'
+    for y in y_true:
+        ... 
 
-    # extract word options from y_true
-
-
+    # multiclass accuracy, f1, precision, recall, confusion matrix, 
 
 
 
