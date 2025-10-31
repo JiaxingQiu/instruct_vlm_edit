@@ -28,12 +28,14 @@ class VLMDataset(Dataset):
                         task="qa",  # "qa" or "mcq"
                         with_rationale=False,
                         shuffle_choices=False,
+                        paired=True,
                         batch_size=32,
                         shuffle=True,
                         num_workers=0,
                         pin_memory=True):
+        task = task.lower()
         if task == "mcq" and shuffle_choices:
-            self.shuffle_choices(seed=333)
+            self.shuffle_choices(seed=333, paired=paired)
         
         for ex in self.data:
             if task == "mcq":
@@ -52,18 +54,25 @@ class VLMDataset(Dataset):
         self.loader.shuffle_choices = shuffle_choices
 
 
-    def shuffle_choices(self, seed=None):
-        """Shuffle (letter, option) pairs together, preserving their association.
-        The rendered lines may start with any of (A|B|C|D) after shuffling.
-        """
+    def shuffle_choices(self, seed=None, paired=True):
+        """Shuffle (letter, option) pairs. If pair=False, also randomize letter–option association."""
         rng = random.Random(seed) if seed is not None else random
         for ex in self.data:
             chs = ex.get("choices", "")
             pairs = extract_choice_pairs(chs)
             if len(pairs) != 4:
                 continue
-            rng.shuffle(pairs)
-            ex["choices"] = "\n".join([f"({ltr}) {txt}" for (ltr, txt) in pairs])
+
+            if paired:
+                rng.shuffle(pairs)
+            else:
+                letters = [ltr for ltr, _ in pairs]
+                options = [opt for _, opt in pairs]
+                rng.shuffle(letters)
+                rng.shuffle(options)
+                pairs = list(zip(letters, options))
+
+            ex["choices"] = " ".join([f"({ltr}) {txt}" for (ltr, txt) in pairs])
 
     def add_letter_labels(self):
         """Add 'letter_label' field per example by matching text in 'label' to current choices.

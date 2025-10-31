@@ -41,7 +41,7 @@ def run_eval(config, args):
 
     # Prepare loader
     ds.set_dataloader(
-        task=args.task.upper(),
+        task=args.task,
         with_rationale=args.rationale,
         shuffle_choices=False,
         batch_size=32,
@@ -67,10 +67,8 @@ def run_eval(config, args):
 
     # Save under res_dir
     res_dir = getattr(config, "res_dir")
-    res_dir = os.path.join(res_dir, f"{args.task}{'_rationale' if args.rationale else ''}")
-
     os.makedirs(res_dir, exist_ok=True)
-    out_path = os.path.join(res_dir, f"{args.task}_metrics.json")
+    out_path = os.path.join(res_dir, f"{args.task}{'_rationale' if args.rationale else ''}_{args.split}.json")
     with open(out_path, "w") as f:
         json.dump(results, f, indent=2)
     print(f"Saved metrics to {out_path}")
