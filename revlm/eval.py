@@ -3,6 +3,7 @@ import json
 import os
 import random
 import torch
+from PIL import Image
 
 from .config_utils import *
 from .dataset import *
@@ -30,7 +31,7 @@ def run_eval(config, args):
         ex = ds.data[i]
         print(ex)
         choices.append(ex["choices"])
-        imgs.append(ex["image"]) # read image fomr ex["image_path"]
+        imgs.append(Image.open(ex["image"]).convert("RGB"))
         qs.append("Choose A/B/C/D based on the image. " + ex["question"] + ex['choices'])
     
     with torch.no_grad():
