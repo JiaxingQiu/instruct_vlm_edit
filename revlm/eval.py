@@ -21,6 +21,22 @@ def run_eval(config, args):
     ds = get_dataset(config, split=args.split)
     if args.subsample and len(ds) > args.subsample:
         ds.data = random.sample(ds.data, args.subsample)
+    
+    # --- print 10 example answers ---
+    choices = []
+    imgs = []
+    qs = []
+    for i in range(10):
+        ex = ds.data[i]
+        print(ex)
+        choices.append(ex["choices"])
+        imgs.append(ex["image"]) # read image fomr ex["image_path"]
+        qs.append("Choose A/B/C/D based on the image. " + ex["question"] + ex['choices'])
+    
+    with torch.no_grad():
+        ans = vlm.generate(images=imgs, prompts=qs, max_new_tokens=100)
+    print(ans)
+    # --------------
 
     # Prepare loader
     ds.set_dataloader(
