@@ -1,10 +1,9 @@
 import torch
 import logging
-import json
 import math
-from typing import List, Dict, Optional
 from PIL import Image
 from .utils import *
+from typing import Dict
 
 LOG = logging.getLogger(__name__)
 
@@ -23,9 +22,18 @@ class VQAModel(torch.nn.Module):
         self.preprocess = get_preprocess(config)
         
     
-    def forward(self, **inputs):
-        inputs = {k: v.to(self.device) if torch.is_tensor(v) else v for k, v in inputs.items()}
-        return self.model(**inputs)
+    def forward(self, batch):
+        """Accept a batch from dataset.loader and return logits.
+        If batch has 'images' and 'prompts', encode internally; else assume tokenized.
+        Stores loss if provided by the HF model.
+        """
+        if isinstance(batch, dict) and ("images" in batch and "prompts" in batch):
+            inputs = self.encode(batch["images"], batch["prompts"], tokenize=False)
+        else:
+            inputs = {k: (v.to(self.device) if torch.is_tensor(v) else v) for k, v in batch.items()}
+        output = self.model(**inputs)
+        self.loss = getattr(output, "loss", None)
+        return output.logits if hasattr(output, "logits") else output
 
     
     def encode(self, images, prompts, tokenize=False):
@@ -60,17 +68,16 @@ class VQAModel(torch.nn.Module):
 
     
     @torch.no_grad()
-    def _score_label_words(
-        self,
-        images,
-        prompts,
-        label_words,
-        use_prob: bool = True,
-        use_avg: bool = False,
-        temperature: float = 1.0,
-    ):
+    def _score_label_words(self,
+                            image,
+                            prompt,
+                            label_words,
+                            use_prob: bool = True,
+                            use_avg: bool = False,
+                            temperature: float = 1.0,
+                        ):
         # Build model-ready inputs using existing encode (keep tokenize=False to return strings to processor)
-        prompt_inputs = self.encode(images, prompts, tokenize=False)
+        prompt_inputs = self.encode(image, prompt, tokenize=False)
 
         is_enc_dec = bool(getattr(getattr(self.model, "config", object()), "is_encoder_decoder", False))
         results = {}
@@ -83,12 +90,9 @@ class VQAModel(torch.nn.Module):
             ).input_ids.to(self.device)
 
             if is_enc_dec:
-                outputs = self.model(
-                    **prompt_inputs,
-                    labels=cand_ids,
-                    return_dict=True,
-                )
-                avg_nll = float(outputs.loss.item())
+                # Use forward to run model and populate self.loss
+                self.forward({**prompt_inputs, "labels": cand_ids})
+                avg_nll = float(self.loss.item()) if self.loss is not None else float("inf")
                 num_tokens = int(cand_ids.shape[1])
                 sum_nll = avg_nll * num_tokens
             else:
@@ -96,12 +100,8 @@ class VQAModel(torch.nn.Module):
                 attn = prompt_inputs.get("attention_mask")
 
                 if input_ids is None:
-                    outputs = self.model(
-                        **prompt_inputs,
-                        labels=cand_ids,
-                        return_dict=True,
-                    )
-                    avg_nll = float(outputs.loss.item())
+                    self.forward({**prompt_inputs, "labels": cand_ids})
+                    avg_nll = float(self.loss.item()) if self.loss is not None else float("inf")
                     num_tokens = int(cand_ids.shape[1])
                     sum_nll = avg_nll * num_tokens
                 else:
@@ -117,12 +117,8 @@ class VQAModel(torch.nn.Module):
                     if full_attn is not None:
                         model_inputs["attention_mask"] = full_attn
 
-                    outputs = self.model(
-                        **model_inputs,
-                        labels=labels,
-                        return_dict=True,
-                    )
-                    avg_nll = float(outputs.loss.item())
+                    self.forward({**model_inputs, "labels": labels})
+                    avg_nll = float(self.loss.item()) if self.loss is not None else float("inf")
                     num_tokens = int(full_ids.shape[1] - prompt_len)
                     sum_nll = avg_nll * max(1, num_tokens)
 
@@ -143,27 +139,20 @@ class VQAModel(torch.nn.Module):
     
     @torch.no_grad()
     def score_labels(
-        self,
-        images,
-        prompts,
-        label_words,
-        use_prob: bool = True,
-        use_avg: bool = False,
-        temperature: float = 1.0,
-    ):
-        # Batched mode: lists for images/prompts and a list of label lists
-        is_images_list = isinstance(images, list)
-        is_prompts_list = isinstance(prompts, list)
-        is_labels_list_of_lists = isinstance(label_words, list) and (len(label_words) == 0 or isinstance(label_words[0], list))
-
-        if is_images_list and is_prompts_list and is_labels_list_of_lists:
-            assert len(images) == len(prompts) == len(label_words), "images/prompts/label_words must have same length"
-            out = []
-            for img, pr, lbls in zip(images, prompts, label_words):
-                out.append(self._score_label_words(img, pr, lbls, use_prob=use_prob, use_avg=use_avg, temperature=temperature))
-            return out
-
-        # Single example: label_words is List[str]
-        return self._score_label_words(images, prompts, label_words, use_prob=use_prob, use_avg=use_avg, temperature=temperature)
+                    self,
+                    images,
+                    prompts,
+                    label_words,
+                    use_prob: bool = True,
+                    use_avg: bool = False,
+                    temperature: float = 1.0,
+                ):
+        # Batched mode only: lists for images/prompts and a list of label lists
+        assert isinstance(images, list) and isinstance(prompts, list) and isinstance(label_words, list), "Expect lists for images, prompts, and label_words"
+        assert len(images) == len(prompts) == len(label_words), "images/prompts/label_words must have same length"
+        return [
+            self._score_label_words(img, pr, lbls, use_prob=use_prob, use_avg=use_avg, temperature=temperature)
+            for img, pr, lbls in zip(images, prompts, label_words)
+        ]
 
 

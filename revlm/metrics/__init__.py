@@ -1,25 +1,207 @@
 import torch
 import numpy as np
+import re
+from ..dataset.utils import extract_choice_pairs, extract_choices
 
 
-def MCQ_metrics(model, vlmdataset):
-    loader = vlmdataset.loader # loader is init with task before this
-    y_true = []
-    y_pred = []
-    choices = []
+def mcq_true_tuple(labels_text, choices_str, gold_letter=None):
+    """Return (gold_letter, gold_label_text). gold_letter preferred if provided; otherwise derive from labels_text.
+    choices_str is the MCQ string with (A)-(D).
+    """
+    pairs = extract_choice_pairs(choices_str or "")  # [(letter, option_text)]
+    letter_to_text = {ltr: txt for ltr, txt in pairs}
+    if gold_letter:
+        gl = str(gold_letter).upper()
+    else:
+        gl = None
+        gold_txt = str(labels_text or "")
+        for ltr, txt in pairs:
+            if gold_txt and txt.strip().lower() == gold_txt.strip().lower():
+                gl = ltr
+                break
+    gold_label = (str(labels_text) if labels_text else None) or letter_to_text.get(gl)
+    return gl, gold_label
+
+
+def mcq_pred_tuple(output_text, choices_str):
+    """Return (pred_letter_if_any, pred_option_if_any) from model output and choices.
+    Detects explicit (A|B|C|D); also matches option text substring.
+    """
+    pairs = extract_choice_pairs(choices_str or "")
+    pred_letter = None
+    pred_option = None
+    ot = str(output_text or "")
+    m = re.search(r"\(([A-D])\)", ot, flags=re.IGNORECASE)
+    if m:
+        pred_letter = m.group(1).upper()
+    ot_low = ot.lower()
+    for ltr, txt in pairs:
+        if txt and txt.lower() in ot_low:
+            pred_option = txt
+            if not pred_letter:
+                pred_letter = ltr
+            break
+    return pred_letter, pred_option
+
+
+def MCQ_metrics_text(model, vlmdataset):
+    """Compute MCQ metrics using tuple logic.
+
+    y_pred tuple: (pred_letter if any, pred_option if any)
+    y_true tuple: (gold_letter, gold_label)
+    Letter is taken from “(A|B|C|D)” in the output if present; otherwise, we match by option text substring.
+
+    """
+    loader = vlmdataset.loader
+    letters = ["A", "B", "C", "D"]
+    letter_to_idx = {c: i for i, c in enumerate(letters)}
+
+    total = 0
+    correct = 0
+    y_true_letters = []
+    y_pred_letters = []
+
     for batch in loader:
-        y_true += batch["label"]
-        choices += batch["choices"]
-        y_pred += model.generate(batch["image"], batch["prompt"], max_new_tokens=100)
-    
-    # engineer y_pred to get the presence of any (A/B/C/D or the option text) in the 'choices' column, make eahc y = (A/B/C/D if returned, option in the choices taht present in y_pred if returned)
-    for y in y_pred:
-        ...
-    # engineer y_true to be a list of y = (letter, option) pairs, where option is the 'label' i.e. ("A", "car"), in other words, find the letter in 'choices' that matches the 'label'
-    for y in y_true:
-        ... 
+        images = batch.get("images")
+        prompts = batch.get("prompts")
+        labels_text = batch.get("labels", [])
+        choices_list = batch.get("choices", [])
+        gold_letters_list = batch.get("label_letters", [])
 
-    # multiclass accuracy, f1, precision, recall, confusion matrix, 
+        outputs = model.generate(images, prompts, max_new_tokens=100)
+
+        for i, out_text in enumerate(outputs):
+            choices_str = choices_list[i] if i < len(choices_list) else ""
+            gold_letter, gold_label = mcq_true_tuple(
+                labels_text[i] if i < len(labels_text) else None,
+                choices_str,
+                gold_letters_list[i] if i < len(gold_letters_list) else None,
+            )
+            pred_letter, pred_option = mcq_pred_tuple(out_text, choices_str)
+
+            # Accuracy: letter match OR option-text match
+            if gold_letter:
+                total += 1
+                is_correct = False
+                if pred_letter and pred_letter == gold_letter:
+                    is_correct = True
+                elif pred_option and gold_label and pred_option.strip().lower() == str(gold_label).strip().lower():
+                    is_correct = True
+                if is_correct:
+                    correct += 1
+
+                # For classification metrics on letters
+                if pred_letter in letters:
+                    y_pred_letters.append(letter_to_idx[pred_letter])
+                else:
+                    # mark as wrong by assigning an out-of-range pred? Simpler: skip confusion entry
+                    y_pred_letters.append(None)
+                if gold_letter in letters:
+                    y_true_letters.append(letter_to_idx[gold_letter])
+                else:
+                    y_true_letters.append(None)
+
+    # Build confusion matrix over A-D for valid pairs
+    cm = np.zeros((4, 4), dtype=int)
+    valid_pairs = 0
+    for gt, pr in zip(y_true_letters, y_pred_letters):
+        if gt is not None and pr is not None:
+            cm[gt, pr] += 1
+            valid_pairs += 1
+
+    # Macro precision/recall/F1 over A-D
+    eps = 1e-12
+    tp = np.diag(cm).astype(float)
+    fp = cm.sum(axis=0) - tp
+    fn = cm.sum(axis=1) - tp
+    with np.errstate(divide='ignore', invalid='ignore'):
+        prec = (tp / (tp + fp + eps))
+        rec = (tp / (tp + fn + eps))
+        f1 = (2 * prec * rec) / (prec + rec + eps)
+    macro_precision = float(np.nanmean(prec))
+    macro_recall = float(np.nanmean(rec))
+    macro_f1 = float(np.nanmean(f1))
+
+    acc = (correct / total) if total > 0 else 0.0
+    return {
+        "accuracy": acc,
+        "n": total,
+        "macro_precision": macro_precision,
+        "macro_recall": macro_recall,
+        "macro_f1": macro_f1,
+        "confusion_matrix": cm.tolist(),
+    }
+
+
+def MCQ_metrics_score(model, vlmdataset):
+    """Log-loss based accuracy using model.score_labels.
+
+    Uses option texts from choices when available; otherwise falls back to ["A","B","C","D"].
+    """
+    loader = vlmdataset.loader
+    letters = ["A", "B", "C", "D"]
+    total = 0
+    correct = 0
+
+    for batch in loader:
+        images = batch.get("images")
+        prompts = batch.get("prompts")
+        labels_text = batch.get("labels", [])
+        choices_list = batch.get("choices", [])
+        gold_letters = batch.get("label_letters", [])
+
+        # Build label_words per example
+        labels_per_ex = []
+        gold_indices = []
+        for i in range(len(prompts)):
+            ch_str = choices_list[i] if i < len(choices_list) else ""
+            ch = extract_choices(ch_str) if ch_str else []
+            if len(ch) == 4:
+                label_words = ch
+                # gold index by letter or by matching label text
+                if i < len(gold_letters) and gold_letters[i] in letters:
+                    gold_idx = letters.index(str(gold_letters[i]).upper())
+                else:
+                    gold_txt = str(labels_text[i]) if i < len(labels_text) else ""
+                    gold_idx = next((j for j, t in enumerate(ch) if t.strip().lower() == gold_txt.strip().lower()), None)
+            else:
+                label_words = letters
+                if i < len(gold_letters) and gold_letters[i] in letters:
+                    gold_idx = letters.index(str(gold_letters[i]).upper())
+                else:
+                    gold_idx = None
+            labels_per_ex.append(label_words)
+            gold_indices.append(gold_idx)
+
+        # Score with model
+        results = model.score_labels(images, prompts, labels_per_ex, use_prob=True, use_avg=False, temperature=1.0)
+
+        # results is List[Dict[label -> metrics]]
+        for i, per_lbl in enumerate(results):
+            if not isinstance(per_lbl, dict) or gold_indices[i] is None:
+                continue
+            candidate_labels = labels_per_ex[i]
+            # choose by prob if present else by lowest sum_nll
+            best_idx = None
+            best_val = None
+            for j, w in enumerate(candidate_labels):
+                met = per_lbl.get(w, {})
+                val = met.get("prob")
+                if val is None:
+                    # use negative log-loss (lower is better)
+                    val = -float(met.get("sum_nll", float("inf")))
+                if best_val is None or val > best_val:
+                    best_val = val
+                    best_idx = j
+            if best_idx is not None:
+                total += 1
+                if best_idx == gold_indices[i]:
+                    correct += 1
+
+    acc = (correct / total) if total > 0 else 0.0
+    return {"accuracy": acc, "n": total}
+
+
 
 
 

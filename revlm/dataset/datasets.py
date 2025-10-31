@@ -44,6 +44,8 @@ class VLMDataset(Dataset):
                 base = f"{sys_prompt} {ex['question']}".strip()
             ex["prompt"] = f"{base} {ex.get('rationale','')}".strip() if with_rationale else base
 
+        # add label_letter: letter that matches the label in the choices column.  example: label = "car", choices = "(A) car\n(B) bike\n(C) train\n(D) bus" -> label_letter = "A"
+        self.add_letter_labels()
         self.loader = DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory, collate_fn=self.image_collate)
         self.loader.task = task
         self.loader.with_rationale = with_rationale
@@ -85,7 +87,15 @@ class VLMDataset(Dataset):
         images = [Image.open(ex["image"]).convert("RGB") for ex in batch]
         prompts = [ex.get("prompt", ex.get("question", "")) for ex in batch]
         labels = [ex.get("label") for ex in batch]
-        return {"images": images, "prompts": prompts, "labels": labels}
+        choices = [ex.get("choices", "") for ex in batch]
+        label_letters = [ex.get("letter_label") for ex in batch]
+        return {
+            "images": images,
+            "prompts": prompts,
+            "labels": labels,
+            "choices": choices,
+            "label_letters": label_letters,
+        }
 
 
 class AOKVQADataset(VLMDataset):
