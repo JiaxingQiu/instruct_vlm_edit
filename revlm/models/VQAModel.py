@@ -14,6 +14,8 @@ class VQAModel(torch.nn.Module):
         super(VQAModel, self).__init__()
         self.config = config
         self.device = config.device
+        # default generation temperature (used in generate)
+        self.temp = getattr(config.model, "temperature", 1.0)
 
         self.model = get_hf_model(config)
         self.model.eval()
@@ -23,7 +25,7 @@ class VQAModel(torch.nn.Module):
         
     
     def forward(self, batch):
-        """Accept a batch from dataset.loader and return logits.
+        """Accept a batch from vlmdataset.loader and return logits.
         If batch has 'images' and 'prompts', encode internally; else assume tokenized.
         Stores loss if provided by the HF model.
         """
@@ -49,7 +51,7 @@ class VQAModel(torch.nn.Module):
     def generate(self, images, prompts, **kwargs):
         inputs = self.encode(images, prompts, tokenize=False)
         with torch.no_grad():
-            outputs = self.model.generate(**inputs, **kwargs)
+            outputs = self.model.generate(**inputs, temperature=self.temp, **kwargs)
             outputs_text = self.processor.batch_decode(outputs, skip_special_tokens=True)
             answers = [clean_answer(o, i) for (o, i) in zip(outputs_text, prompts)]
         return answers
@@ -68,7 +70,7 @@ class VQAModel(torch.nn.Module):
 
     
     @torch.no_grad()
-    def _score_label_words(self,
+    def _score_choices_single(self,
                             image,
                             prompt,
                             label_words,
@@ -79,7 +81,6 @@ class VQAModel(torch.nn.Module):
         # Build model-ready inputs using existing encode (keep tokenize=False to return strings to processor)
         prompt_inputs = self.encode(image, prompt, tokenize=False)
 
-        is_enc_dec = bool(getattr(getattr(self.model, "config", object()), "is_encoder_decoder", False))
         results = {}
 
         for word in label_words:
@@ -89,38 +90,12 @@ class VQAModel(torch.nn.Module):
                 add_special_tokens=False,
             ).input_ids.to(self.device)
 
-            if is_enc_dec:
-                # Use forward to run model and populate self.loss
-                self.forward({**prompt_inputs, "labels": cand_ids})
-                avg_nll = float(self.loss.item()) if self.loss is not None else float("inf")
-                num_tokens = int(cand_ids.shape[1])
-                sum_nll = avg_nll * num_tokens
-            else:
-                input_ids = prompt_inputs.get("input_ids")
-                attn = prompt_inputs.get("attention_mask")
-
-                if input_ids is None:
-                    self.forward({**prompt_inputs, "labels": cand_ids})
-                    avg_nll = float(self.loss.item()) if self.loss is not None else float("inf")
-                    num_tokens = int(cand_ids.shape[1])
-                    sum_nll = avg_nll * num_tokens
-                else:
-                    full_ids = torch.cat([input_ids, cand_ids], dim=1)
-                    full_attn = torch.cat([attn, torch.ones_like(cand_ids)], dim=1) if attn is not None else None
-
-                    labels = torch.full_like(full_ids, -100)
-                    prompt_len = int(input_ids.shape[1])
-                    labels[:, prompt_len:] = full_ids[:, prompt_len:]
-
-                    model_inputs = dict(prompt_inputs)
-                    model_inputs["input_ids"] = full_ids
-                    if full_attn is not None:
-                        model_inputs["attention_mask"] = full_attn
-
-                    self.forward({**model_inputs, "labels": labels})
-                    avg_nll = float(self.loss.item()) if self.loss is not None else float("inf")
-                    num_tokens = int(full_ids.shape[1] - prompt_len)
-                    sum_nll = avg_nll * max(1, num_tokens)
+            avg_nll, sum_nll, num_tokens = compute_loss_stats(
+                self,
+                prompt_inputs,
+                cand_ids,
+                mask_prompt=True,
+            )
 
             results[word] = {
                 "sum_nll": float(sum_nll),
@@ -138,7 +113,7 @@ class VQAModel(torch.nn.Module):
 
     
     @torch.no_grad()
-    def score_labels(
+    def score_choices(
                     self,
                     images,
                     prompts,
@@ -151,8 +126,76 @@ class VQAModel(torch.nn.Module):
         assert isinstance(images, list) and isinstance(prompts, list) and isinstance(label_words, list), "Expect lists for images, prompts, and label_words"
         assert len(images) == len(prompts) == len(label_words), "images/prompts/label_words must have same length"
         return [
-            self._score_label_words(img, pr, lbls, use_prob=use_prob, use_avg=use_avg, temperature=temperature)
+            self._score_choices_single(img, pr, lbls, use_prob=use_prob, use_avg=use_avg, temperature=temperature)
             for img, pr, lbls in zip(images, prompts, label_words)
         ]
 
 
+    @torch.no_grad()
+    def letter_classifier(self, images, prompts, letters=("A", "B", "C", "D")):
+        """Single-forward next-token classifier over letters.
+        Formats prompts to elicit a single-letter answer, then classifies using next-token logits.
+        Returns (pred_letters: List[str], probs: torch.Tensor[B, 4]).
+        """
+        prompts = [f"{p.strip()}\nAnswer with a single letter (A, B, C, or D) only." for p in prompts]
+        inputs = self.encode(images, prompts, tokenize=False)
+
+        is_enc_dec = bool(getattr(getattr(self.model, "config", object()), "is_encoder_decoder", False))
+        if is_enc_dec:
+            bos = self.tokenizer.bos_token_id or self.tokenizer.pad_token_id or 0
+            dec_inp = torch.full((len(prompts), 1), bos, dtype=torch.long, device=self.device)
+            outputs = self.model(**inputs, decoder_input_ids=dec_inp, use_cache=False, return_dict=True)
+            next_logits = outputs.logits[:, -1, :]
+        else:
+            outputs = self.model(**inputs, return_dict=True)
+            next_logits = outputs.logits[:, -1, :]
+
+        letter_ids = [ids[0] for ids in self.tokenizer(list(letters), add_special_tokens=False).input_ids]
+        letter_ids_t = torch.tensor(letter_ids, device=self.device)
+        scores = next_logits.index_select(dim=1, index=letter_ids_t)
+        probs = torch.softmax(scores, dim=1)
+        pred_idx = probs.argmax(dim=1)
+        preds = [letters[i] for i in pred_idx.tolist()]
+        return preds, probs
+
+
+    def get_loss(self, batch: Dict):
+        """Return differentiable loss tensor for a loader batch (for finetuning).
+        Expects batch with 'images', 'prompts', 'labels' (gold answers as text).
+        """
+        images = batch.get("images")
+        prompts = batch.get("prompts")
+        golds = batch.get("labels", [])
+        prompt_inputs = self.encode(images, prompts, tokenize=False)
+
+        gold_texts = [str(x) if x is not None else "" for x in golds]
+        gold_tok = self.tokenizer(gold_texts, return_tensors="pt", add_special_tokens=False, padding=True)
+        labels_ids = gold_tok.input_ids.to(self.device)
+        if labels_ids.shape[1] == 0:
+            # No target tokens → zero loss
+            return torch.tensor(0.0, device=self.device, requires_grad=True)
+
+        is_enc_dec = bool(getattr(getattr(self.model, "config", object()), "is_encoder_decoder", False))
+        if is_enc_dec:
+            out = self.model(**prompt_inputs, labels=labels_ids)
+            return out.loss
+
+        input_ids = prompt_inputs.get("input_ids")
+        attn = prompt_inputs.get("attention_mask")
+        if input_ids is None:
+            out = self.model(**prompt_inputs, labels=labels_ids)
+            return out.loss
+
+        # Decoder-only: concatenate prompt + labels; mask prompt tokens
+        full_ids = torch.cat([input_ids, labels_ids], dim=1)
+        full_attn = torch.cat([attn, torch.ones_like(labels_ids)], dim=1) if attn is not None else None
+        labels = torch.full_like(full_ids, -100)
+        prompt_len = int(input_ids.shape[1])
+        labels[:, prompt_len:] = full_ids[:, prompt_len:]
+
+        model_inputs = dict(prompt_inputs)
+        model_inputs["input_ids"] = full_ids
+        if full_attn is not None:
+            model_inputs["attention_mask"] = full_attn
+        out = self.model(**model_inputs, labels=labels)
+        return out.loss
