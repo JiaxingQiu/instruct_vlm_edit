@@ -43,11 +43,8 @@ def run_eval(config, args):
     ds.set_dataloader(
         task=args.task,
         with_rationale=args.rationale,
-        shuffle_choices=False,
-        batch_size=32,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=True,
+        shuffle_choices=True,
+        unpaired=True
     )
 
     if args.task == "mcq":

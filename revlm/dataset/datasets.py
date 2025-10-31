@@ -28,14 +28,14 @@ class VLMDataset(Dataset):
                         task="qa",  # "qa" or "mcq"
                         with_rationale=False,
                         shuffle_choices=False,
-                        paired=True,
+                        unpaired=False,
                         batch_size=32,
                         shuffle=True,
                         num_workers=0,
                         pin_memory=True):
         task = task.lower()
         if task == "mcq" and shuffle_choices:
-            self.shuffle_choices(seed=333, paired=paired)
+            self.shuffle_choices(seed=333, unpaired=unpaired)
         
         for ex in self.data:
             if task == "mcq":
@@ -54,8 +54,8 @@ class VLMDataset(Dataset):
         self.loader.shuffle_choices = shuffle_choices
 
 
-    def shuffle_choices(self, seed=None, paired=True):
-        """Shuffle (letter, option) pairs. If pair=False, also randomize letter–option association."""
+    def shuffle_choices(self, seed=None, unpaired=False):
+        """Shuffle (letter, option) pairs. If unpaired=False, also randomize letter–option association."""
         rng = random.Random(seed) if seed is not None else random
         for ex in self.data:
             chs = ex.get("choices", "")
@@ -63,16 +63,16 @@ class VLMDataset(Dataset):
             if len(pairs) != 4:
                 continue
 
-            if paired:
+            if not unpaired: # paired shuffle
                 rng.shuffle(pairs)
-            else:
+            else: # unpaired shuffle
                 letters = [ltr for ltr, _ in pairs]
                 options = [opt for _, opt in pairs]
                 rng.shuffle(letters)
                 rng.shuffle(options)
                 pairs = list(zip(letters, options))
 
-            ex["choices"] = " ".join([f"({ltr}) {txt}" for (ltr, txt) in pairs])
+            ex["choices"] = "\n".join([f"({ltr}) {txt}" for (ltr, txt) in pairs])
 
     def add_letter_labels(self):
         """Add 'letter_label' field per example by matching text in 'label' to current choices.
