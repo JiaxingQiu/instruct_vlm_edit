@@ -50,8 +50,10 @@ class VQAModel(torch.nn.Module):
 
     def generate(self, images, prompts, **kwargs):
         inputs = self.encode(images, prompts, tokenize=False)
+        # Respect caller-provided temperature; default to self.temp otherwise
+        kwargs.setdefault("temperature", self.temp)
         with torch.no_grad():
-            outputs = self.model.generate(**inputs, temperature=self.temp, **kwargs)
+            outputs = self.model.generate(**inputs, **kwargs)
             outputs_text = self.processor.batch_decode(outputs, skip_special_tokens=True)
             answers = [clean_answer(o, i) for (o, i) in zip(outputs_text, prompts)]
         return answers
