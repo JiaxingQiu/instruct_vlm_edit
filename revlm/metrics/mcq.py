@@ -135,7 +135,7 @@ def MCQ_metrics_text(model, vlmdataset):
     return {"accuracy": acc, "n": total, "confusion_matrix": cm.tolist()}
 
 
-def MCQ_metrics_score(model, vlmdataset):
+def MCQ_metrics_score(model, vlmdataset, score_by_letter: bool = True):
     """Log-loss based accuracy using model.score_choices.
 
     Uses option texts from choices when available; otherwise falls back to ["A","B","C","D"].
@@ -148,7 +148,6 @@ def MCQ_metrics_score(model, vlmdataset):
     for batch in loader:
         images = batch.get("images")
         prompts = batch.get("prompts")
-        labels_text = batch.get("labels", [])
         choices_list = batch.get("choices", [])
         gold_letters = batch.get("label_letters", [])
 
@@ -156,32 +155,17 @@ def MCQ_metrics_score(model, vlmdataset):
         labels_per_ex = []
         gold_indices = []
         for i in range(len(prompts)):
-            ch_str = choices_list[i] if i < len(choices_list) else ""
-            ch = extract_choices(ch_str) if ch_str else []
-            if len(ch) == 4:
-                label_words = ch
-                # gold index by letter or by matching label text
-                if i < len(gold_letters) and gold_letters[i] in letters:
-                    gold_idx = letters.index(str(gold_letters[i]).upper())
-                else:
-                    gold_txt = str(labels_text[i]) if i < len(labels_text) else ""
-                    gold_idx = next((j for j, t in enumerate(ch) if t.strip().lower() == gold_txt.strip().lower()), None)
+            if score_by_letter:
+                labels_per_ex.append(letters)
             else:
-                label_words = letters
-                if i < len(gold_letters) and gold_letters[i] in letters:
-                    gold_idx = letters.index(str(gold_letters[i]).upper())
-                else:
-                    gold_idx = None
-            labels_per_ex.append(label_words)
-            gold_indices.append(gold_idx)
+                labels_per_ex.append(extract_choices(choices_list[i] if i < len(choices_list) else ""))
+            gold_indices.append(letters.index(str(gold_letters[i]).upper()))
 
         # Score with model (per-example choice scores)
         results = model.score_choices(images, prompts, labels_per_ex, use_prob=True, use_avg=False)
 
         # results is List[Dict[label -> metrics]] aligned with labels_per_ex
         for i, per_lbl in enumerate(results):
-            if not isinstance(per_lbl, dict) or gold_indices[i] is None:
-                continue
             candidate_labels = labels_per_ex[i]
             # choose by prob if present else by lowest sum_nll
             best_idx = None

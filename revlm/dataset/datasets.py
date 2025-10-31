@@ -25,18 +25,18 @@ class VLMDataset(Dataset):
         return self.data[idx]
 
     def set_dataloader(self,
-                        task="QA",  # "QA" or "MCQ"
+                        task="qa",  # "qa" or "mcq"
                         with_rationale=False,
                         shuffle_choices=False,
                         batch_size=32,
                         shuffle=True,
                         num_workers=0,
                         pin_memory=True):
-        if task == "MCQ" and shuffle_choices:
+        if task == "mcq" and shuffle_choices:
             self.shuffle_choices(seed=333)
         
         for ex in self.data:
-            if task == "MCQ":
+            if task == "mcq":
                 sys_prompt = "Choose A/B/C/D based on the image."
                 base = f"{sys_prompt} {ex['question']} {ex.get('choices','')}".strip()
             else:
