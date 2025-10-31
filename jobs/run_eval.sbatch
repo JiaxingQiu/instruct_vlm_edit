@@ -19,11 +19,10 @@ cd /scratch/jq2uw/MME/instruct_vlm_edit
 mkdir -p logs
 
 # Example command - adjust parameters based on your needs
-python revlm/main.py \
-    --editor ft \
-    --model_name llava \
-    --inner_params "layer_name.weight" \
-    --dataset_name fvqa \
-    --config config/config.yaml
+python -m revlm.eval.py  --model_name llava --dataset_name fvqa --split test --task mcq
+python -m revlm.eval.py  --model_name llava --dataset_name fvqa --split test --task mcq --rationale 
+
+python -m revlm.eval.py  --model_name llava --dataset_name aokvqa --split test --task mcq
+python -m revlm.eval.py  --model_name llava --dataset_name aokvqa --split test --task mcq --rationale 
 
 

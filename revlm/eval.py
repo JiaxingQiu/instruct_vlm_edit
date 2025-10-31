@@ -18,7 +18,7 @@ def run_eval(config, args):
     vlm = get_model(config)
 
     # Load dataset (test split)
-    ds = get_dataset(config, split="test")
+    ds = get_dataset(config, split=args.split)
     if args.subsample and len(ds) > args.subsample:
         ds.data = random.sample(ds.data, args.subsample)
 
@@ -65,10 +65,11 @@ def run_eval(config, args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="VLM Evaluation")
-    parser.add_argument("--config", type=str, default="config/config.yaml", help="Path to YAML config file (CLI overrides YAML)")
-    parser.add_argument("--editor", type=str, required=True, choices=["raw", "ft", "ft_ewc", "ft_retrain", "mend", "grace", "rome", "memory", "defer"], help="Editor method to use ('raw' = no editing)")
+    parser.add_argument("--config", type=str, default="revlm/config/config.yaml", help="Path to YAML config file (CLI overrides YAML)")
+    parser.add_argument("--editor", type=str, default="raw", choices=["raw", "ft", "ft_ewc", "ft_retrain", "mend", "grace", "rome", "memory", "defer"], help="Editor method to use ('raw' = no editing)")
     parser.add_argument("--model_name", type=str, default=None, help="Short VLM name to map to full HF id (e.g., 'qwen3', 'llava', 'instructblip')")
     parser.add_argument("--dataset_name", type=str, default="", help="Dataset name (overrides YAML if provided)")
+    parser.add_argument("--split", type=str, default="test", choices=["train", "test"], help="Split to evaluate on")
     parser.add_argument("--task", type=str, default="mcq", choices=["mcq", "qa"], help="Task to evaluate")
     parser.add_argument("--rationale", action="store_true", help="Append rationale to prompts if available")
     parser.add_argument("--subsample", type=int, default=0, help="Evaluate on a random subset of this many examples (0=all)")

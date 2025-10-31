@@ -72,19 +72,22 @@ def mcq_pred_tuple(output_text, choices_str):
     Detects explicit (A|B|C|D); also matches option text substring.
     """
     pairs = extract_choice_pairs(choices_str or "")
-    pred_letter = None
-    pred_option = None
     ot = str(output_text or "")
-    m = re.search(r"\(([A-D])\)", ot, flags=re.IGNORECASE)
-    if m:
-        pred_letter = m.group(1).upper()
-    ot_low = ot.lower()
-    for ltr, txt in pairs:
-        if txt and txt.lower() in ot_low:
-            pred_option = txt
-            if not pred_letter:
+
+    # Try parenthesized letter like "(B)"; else a simple leading letter (e.g., "A", "A.", "C)")
+    m = re.search(r"\(([A-D])\)", ot, flags=re.IGNORECASE) or \
+        re.match(r"^[\s\-\*]*\(?([A-D])\)?[\)\.:\s]", ot.strip(), flags=re.IGNORECASE)
+    pred_letter = m.group(1).upper() if m else None
+    pred_option = None
+
+    # If no explicit letter, fall back to option substring match
+    if pred_letter is None and pairs:
+        low = ot.lower()
+        for ltr, txt in pairs:
+            if txt and txt.lower() in low:
+                pred_option = txt
                 pred_letter = ltr
-            break
+                break
     return pred_letter, pred_option
 
 
