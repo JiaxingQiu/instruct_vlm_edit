@@ -68,7 +68,7 @@ def QA_metrics_text(model, vlmdataset):
     for batch in loader:
         images = batch.get("images")
         prompts = batch.get("prompts")
-        golds = batch.get("labels", [])
+        golds = batch.get("label", [])
         outputs = model.generate(images, prompts, max_new_tokens=64, temperature=getattr(model, "temp", 1.0))
 
         for i, pred in enumerate(outputs):
@@ -114,7 +114,7 @@ def QA_metrics_loss(model, vlmdataset):
     for batch in loader:
         images = batch.get("images")
         prompts = batch.get("prompts")
-        golds = batch.get("labels", [])
+        golds = batch.get("label", [])
 
         # encode prompts/images into model-ready inputs
         prompt_inputs = model.encode(images, prompts, tokenize=False)
@@ -204,7 +204,7 @@ def QA_metrics_nli_bi(model, vlmdataset, nli_pipeline=None):
     for batch in loader:
         images = batch.get("images")
         prompts = batch.get("prompts")
-        golds = batch.get("labels", [])
+        golds = batch.get("label", [])
         preds = model.generate(images, prompts, max_new_tokens=64)
 
         for i, pred in enumerate(preds):

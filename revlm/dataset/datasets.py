@@ -13,7 +13,9 @@ class VLMDataset(Dataset):
         self.split = split
         self.data = []
         self._load_data()
-    
+        # self.add_label_letter()
+        
+
     def _load_data(self):
         """Load dataset - to be implemented by subclasses"""
         raise NotImplementedError("Subclasses must implement _load_data")
@@ -47,7 +49,6 @@ class VLMDataset(Dataset):
             ex["prompt"] = f"{base} {ex.get('rationale','')}".strip() if with_rationale else base
 
         # add label_letter: letter that matches the label in the choices column.  example: label = "car", choices = "(A) car\n(B) bike\n(C) train\n(D) bus" -> label_letter = "A"
-        self.add_letter_labels()
         self.loader = DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=pin_memory, collate_fn=self.image_collate)
         self.loader.task = task
         self.loader.with_rationale = with_rationale
@@ -74,8 +75,8 @@ class VLMDataset(Dataset):
 
             ex["choices"] = "\n".join([f"({ltr}) {txt}" for (ltr, txt) in pairs])
 
-    def add_letter_labels(self):
-        """Add 'letter_label' field per example by matching text in 'label' to current choices.
+    def add_label_letter(self):
+        """Add 'label_letter' field per example by matching text in 'label' to current choices.
         Expects 'label' to contain the answer text (e.g., 'cab').
         """
         for ex in self.data:
@@ -86,8 +87,7 @@ class VLMDataset(Dataset):
                 if opt.strip().lower() == ans_text.lower():
                     letter = ltr
                     break
-            ex["letter_label"] = letter
-
+            ex["label_letter"] = letter
 
     def image_collate(self, batch):
         """Collate function that loads images and returns a batch dict.
@@ -95,15 +95,15 @@ class VLMDataset(Dataset):
         """
         images = [Image.open(ex["image"]).convert("RGB") for ex in batch]
         prompts = [ex.get("prompt", ex.get("question", "")) for ex in batch]
-        labels = [ex.get("label") for ex in batch]
+        label = [ex.get("label") for ex in batch]
         choices = [ex.get("choices", "") for ex in batch]
-        label_letters = [ex.get("letter_label") for ex in batch]
+        label_letter = [ex.get("label_letter") for ex in batch]
         return {
             "images": images,
             "prompts": prompts,
-            "labels": labels,
+            "label": label,
             "choices": choices,
-            "label_letters": label_letters,
+            "label_letter": label_letter,
         }
 
 

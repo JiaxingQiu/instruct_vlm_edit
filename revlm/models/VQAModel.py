@@ -163,11 +163,11 @@ class VQAModel(torch.nn.Module):
 
     def get_loss(self, batch: Dict):
         """Return differentiable loss tensor for a loader batch (for finetuning).
-        Expects batch with 'images', 'prompts', 'labels' (gold answers as text).
+        Expects batch with 'images', 'prompts', 'label' (gold answers as text).
         """
         images = batch.get("images")
         prompts = batch.get("prompts")
-        golds = batch.get("labels", [])
+        golds = batch.get("label", [])
         prompt_inputs = self.encode(images, prompts, tokenize=False)
 
         gold_texts = [str(x) if x is not None else "" for x in golds]

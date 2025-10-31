@@ -82,7 +82,7 @@ def main(config):
                     log_dict["ES"] = ES
                     log_dict["train_time"] = total_time
                     log_dict["edit"] = batch.get("text", "") if isinstance(batch, dict) else ""
-                    log_dict["edit_label"] = batch.get("labels", "") if isinstance(batch, dict) else ""
+                    log_dict["edit_label"] = batch.get("label", "") if isinstance(batch, dict) else ""
                 
                 log_dict["n_edits"] = n_edits
                 

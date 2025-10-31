@@ -109,9 +109,9 @@ def MCQ_metrics_text(model, vlmdataset):
     for batch in loader:
         images = batch.get("images")
         prompts = batch.get("prompts")
-        labels_text = batch.get("labels", [])
+        labels_text = batch.get("label")
         choices_list = batch.get("choices", [])
-        gold_letters_list = batch.get("label_letters", [])
+        gold_letters_list = batch.get("label_letter")
 
         outputs = model.generate(images, prompts, max_new_tokens=100)
 
@@ -152,7 +152,7 @@ def MCQ_metrics_score(model, vlmdataset, score_by_letter: bool = True):
         images = batch.get("images")
         prompts = batch.get("prompts")
         choices_list = batch.get("choices", [])
-        gold_letters = batch.get("label_letters", [])
+        gold_letters = batch.get("label_letter")
 
         # Build label_words per example
         labels_per_ex = []
@@ -162,7 +162,9 @@ def MCQ_metrics_score(model, vlmdataset, score_by_letter: bool = True):
                 labels_per_ex.append(letters)
             else:
                 labels_per_ex.append(extract_choices(choices_list[i] if i < len(choices_list) else ""))
-            gold_indices.append(letters.index(str(gold_letters[i]).upper()))
+            gl = str(gold_letters[i]).upper() if i < len(gold_letters) else None
+            gi = letters.index(gl) if gl in letters else None
+            gold_indices.append(gi)
 
         # Score with model (per-example choice scores)
         results = model.score_choices(images, prompts, labels_per_ex, use_prob=True, use_avg=False)
@@ -202,9 +204,9 @@ def MCQ_metrics_classifier(model, vlmdataset):
     for batch in loader:
         images = batch.get("images")
         prompts = batch.get("prompts")
-        labels_text = batch.get("labels", [])
+        labels_text = batch.get("label")
         choices_list = batch.get("choices", [])
-        gold_letters_list = batch.get("label_letters", [])
+        gold_letters_list = batch.get("label_letter")
 
         preds, _ = model.letter_classifier(images, prompts)
 
