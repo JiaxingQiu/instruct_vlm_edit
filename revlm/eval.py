@@ -49,17 +49,17 @@ def run_eval(config, args):
 
     if args.task == "mcq":
         # Run metrics
+        res_loss1 = MCQ_metrics_score(vlm, ds)
+        res_loss2 = MCQ_metrics_score(vlm, ds, score_by_letter=False)
         res_text = MCQ_metrics_text(vlm, ds)
-        res_score1 = MCQ_metrics_score(vlm, ds)
-        res_score2 = MCQ_metrics_score(vlm, ds, score_by_letter=False)
         res_cls = MCQ_metrics_classifier(vlm, ds)
-        results = {"text": res_text, "loss_letter": res_score1, "loss_option": res_score2, "classifier": res_cls}
+        results = {"loss_letter": res_loss1, "loss_option": res_loss2, "text": res_text, "classifier": res_cls}
     if args.task == "qa":
         # Run metrics
-        res_text = QA_metrics_text(vlm, ds)
         res_loss = QA_metrics_loss(vlm, ds)
+        res_text = QA_metrics_text(vlm, ds)
         res_qa = QA_metrics_nli_bi(vlm, ds)
-        results = {"text": res_text, "loss": res_loss, "nli_bi": res_qa}
+        results = {"loss": res_loss, "text": res_text, "nli_bi": res_qa}
 
    
 
